@@ -130,10 +130,6 @@ public class MainActivity extends AppCompatActivity {
             room.disconnect();
             disconnectedFromOnDestroy = true;
         }
-
-        /*
-         * Release the local media ensuring any memory allocated to audio or video is freed.
-         */
         if (localMedia != null) {
             localMedia.release();
             localMedia = null;
@@ -159,24 +155,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void addParticipant(Participant participant) {
-        /*
-         * This app only displays video for one additional participant per Room
-         */
         if (thumbnailVideoView.getVisibility() == View.VISIBLE) {
             return;
         }
         participantIdentity = participant.getIdentity();
 
-        /*
-         * Add participant renderer
-         */
         if (participant.getMedia().getVideoTracks().size() > 0) {
             addParticipantVideo(participant.getMedia().getVideoTracks().get(0));
         }
 
-        /*
-         * Start listening for participant media events
-         */
         participant.getMedia().setListener(mediaListener());
     }
 
@@ -203,9 +190,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        /*
-         * Remove participant renderer
-         */
         if (participant.getMedia().getVideoTracks().size() > 0) {
             removeParticipantVideo(participant.getMedia().getVideoTracks().get(0));
         }
