@@ -20,13 +20,23 @@ android {
 }
 
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
-    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    })
+
+    final TIMBER_VERSION = '4.5.1'
+
+
+    compile "io.reactivex:rxandroid:1.2.1"
+    compile "io.reactivex:rxjava:1.2.7"
+    //RxPermission for easy runtime permission management
+    compile 'com.tbruyelle.rxpermissions:rxpermissions:0.9.3@aar'
+
+    compile "com.jakewharton.timber:timber:$TIMBER_VERSION"
 
     compile 'com.twilio:video-android:1.0.0-beta15'
     compile 'com.android.support:appcompat-v7:25.3.1'
     testCompile 'junit:junit:4.12'
     compile 'com.android.support.constraint:constraint-layout:1.0.2'
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
 }
