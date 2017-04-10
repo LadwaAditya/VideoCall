@@ -5,23 +5,34 @@ import android.content.Context;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
+import android.view.View;
 import android.widget.Toast;
 
 import com.tbruyelle.rxpermissions.RxPermissions;
+import com.twilio.video.AudioTrack;
 import com.twilio.video.CameraCapturer;
+import com.twilio.video.ConnectOptions;
 import com.twilio.video.LocalAudioTrack;
 import com.twilio.video.LocalMedia;
 import com.twilio.video.LocalVideoTrack;
+import com.twilio.video.Media;
+import com.twilio.video.Participant;
 import com.twilio.video.Room;
 import com.twilio.video.RoomState;
+import com.twilio.video.TwilioException;
+import com.twilio.video.Video;
 import com.twilio.video.VideoRenderer;
+import com.twilio.video.VideoTrack;
 import com.twilio.video.VideoView;
+
+import java.util.Map;
 
 import rx.functions.Action1;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TWILIO_ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiIsImN0eSI6InR3aWxpby1mcGE7dj0xIn0.eyJqdGkiOiJTS2I0OWNkMWEwYWM0MTU3MGYwNjcyY2RhYWY5MDg5OWIxLTE0OTE4MTY0MjAiLCJpc3MiOiJTS2I0OWNkMWEwYWM0MTU3MGYwNjcyY2RhYWY5MDg5OWIxIiwic3ViIjoiQUNlNTUzNzExNWVmZTNhZThhZWFiYTAzOTUzMGMxOWEyNiIsImV4cCI6MTQ5MTgyMDAyMCwiZ3JhbnRzIjp7ImlkZW50aXR5IjoiQW5kcm9pZCIsInJ0YyI6eyJjb25maWd1cmF0aW9uX3Byb2ZpbGVfc2lkIjoiVlNhZTFmODZmMmMyYWUzYmY4MTg0OGJjMGExMjZkNzMzZiJ9fX0.NkuJMQzTRMinibTWd4TzaUO1soTo02XnHQkMxKVMg1I";
+    private static final String TWILIO_ACCESS_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiIsImN0eSI6InR3aWxpby1mcGE7dj0xIn0.eyJqdGkiOiJTS2I0OWNkMWEwYWM0MTU3MGYwNjcyY2RhYWY5MDg5OWIxLTE0OTE4MzA1MTciLCJpc3MiOiJTS2I0OWNkMWEwYWM0MTU3MGYwNjcyY2RhYWY5MDg5OWIxIiwic3ViIjoiQUNlNTUzNzExNWVmZTNhZThhZWFiYTAzOTUzMGMxOWEyNiIsImV4cCI6MTQ5MTgzNDExNywiZ3JhbnRzIjp7ImlkZW50aXR5IjoiY29tLmxhZHdhLmFkaXR5YS52aWRlb2NhbGwiLCJydGMiOnsiY29uZmlndXJhdGlvbl9wcm9maWxlX3NpZCI6IlZTYWUxZjg2ZjJjMmFlM2JmODE4NDhiYzBhMTI2ZDczM2YifX19.wcbIhpTYAtfdrhe5Uhbb4B1uFP1xbsTmyTbho56jNfw";
     private static final String TAG = "VideoActivity";
 
     private static final String CLIENT_IDENTITY = "Android";
@@ -38,9 +49,11 @@ public class MainActivity extends AppCompatActivity {
     private CameraCapturer cameraCapturer;
     private VideoRenderer localVideoView;
 
+    private String participantIdentity;
+
+
     private Room room;
     private boolean disconnectedFromOnDestroy;
-
 
 
     private static boolean permissionGranted = false;
@@ -54,7 +67,7 @@ public class MainActivity extends AppCompatActivity {
         thumbnailVideoView = (VideoView) findViewById(R.id.thumbnail_video_view);
         setVolumeControlStream(AudioManager.STREAM_VOICE_CALL);
 
-        audioManager = (AudioManager)getSystemService(Context.AUDIO_SERVICE);
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
 
 
         grantPermission();
@@ -67,7 +80,15 @@ public class MainActivity extends AppCompatActivity {
 
     private void startVideo() {
         createLocalMedia();
+        connectToRoom("defaultRoom");
+    }
 
+    private void connectToRoom(String roomName) {
+        ConnectOptions connectOptions = new ConnectOptions.Builder(TWILIO_ACCESS_TOKEN)
+                .roomName(roomName)
+                .localMedia(localMedia)
+                .build();
+        room = Video.connect(this, connectOptions, roomListener());
     }
 
 
@@ -86,7 +107,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected  void onResume() {
+    protected void onResume() {
         super.onResume();
         if (localMedia != null && localVideoTrack == null) {
             localVideoTrack = localMedia.addVideoTrack(true, cameraCapturer);
@@ -135,5 +156,175 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
 
+    }
+
+    private void addParticipant(Participant participant) {
+        /*
+         * This app only displays video for one additional participant per Room
+         */
+        if (thumbnailVideoView.getVisibility() == View.VISIBLE) {
+            return;
+        }
+        participantIdentity = participant.getIdentity();
+
+        /*
+         * Add participant renderer
+         */
+        if (participant.getMedia().getVideoTracks().size() > 0) {
+            addParticipantVideo(participant.getMedia().getVideoTracks().get(0));
+        }
+
+        /*
+         * Start listening for participant media events
+         */
+        participant.getMedia().setListener(mediaListener());
+    }
+
+    private void addParticipantVideo(VideoTrack videoTrack) {
+        moveLocalVideoToThumbnailView();
+        primaryVideoView.setMirror(false);
+        videoTrack.addRenderer(primaryVideoView);
+    }
+
+    private void moveLocalVideoToThumbnailView() {
+        if (thumbnailVideoView.getVisibility() == View.GONE) {
+            thumbnailVideoView.setVisibility(View.VISIBLE);
+            localVideoTrack.removeRenderer(primaryVideoView);
+            localVideoTrack.addRenderer(thumbnailVideoView);
+            localVideoView = thumbnailVideoView;
+            thumbnailVideoView.setMirror(cameraCapturer.getCameraSource() ==
+                    CameraCapturer.CameraSource.FRONT_CAMERA);
+        }
+    }
+
+
+    private void removeParticipant(Participant participant) {
+        if (!participant.getIdentity().equals(participantIdentity)) {
+            return;
+        }
+
+        /*
+         * Remove participant renderer
+         */
+        if (participant.getMedia().getVideoTracks().size() > 0) {
+            removeParticipantVideo(participant.getMedia().getVideoTracks().get(0));
+        }
+        participant.getMedia().setListener(null);
+        moveLocalVideoToPrimaryView();
+    }
+
+    private void moveLocalVideoToPrimaryView() {
+        if (thumbnailVideoView.getVisibility() == View.VISIBLE) {
+            localVideoTrack.removeRenderer(thumbnailVideoView);
+            thumbnailVideoView.setVisibility(View.GONE);
+            localVideoTrack.addRenderer(primaryVideoView);
+            localVideoView = primaryVideoView;
+            primaryVideoView.setMirror(cameraCapturer.getCameraSource() ==
+                    CameraCapturer.CameraSource.FRONT_CAMERA);
+        }
+    }
+
+    private void removeParticipantVideo(VideoTrack videoTrack) {
+        videoTrack.removeRenderer(primaryVideoView);
+    }
+
+    private Room.Listener roomListener() {
+        return new Room.Listener() {
+            @Override
+            public void onConnected(Room room) {
+                setTitle(room.getName());
+
+                for (Map.Entry<String, Participant> entry : room.getParticipants().entrySet()) {
+                    addParticipant(entry.getValue());
+                    break;
+                }
+            }
+
+            @Override
+            public void onConnectFailure(Room room, TwilioException e) {
+                Log.e(TAG, e.getExplanation(),e);
+                Log.e(TAG, "Error");
+                e.printStackTrace();
+            }
+
+            @Override
+            public void onDisconnected(Room room, TwilioException e) {
+                MainActivity.this.room = null;
+                if (!disconnectedFromOnDestroy) {
+                    moveLocalVideoToPrimaryView();
+                }
+            }
+
+            @Override
+            public void onParticipantConnected(Room room, Participant participant) {
+                addParticipant(participant);
+
+            }
+
+            @Override
+            public void onParticipantDisconnected(Room room, Participant participant) {
+                removeParticipant(participant);
+            }
+
+            @Override
+            public void onRecordingStarted(Room room) {
+                Log.d(TAG, "onRecordingStarted");
+            }
+
+            @Override
+            public void onRecordingStopped(Room room) {
+                Log.d(TAG, "onRecordingStopped");
+            }
+        };
+    }
+
+    private Media.Listener mediaListener() {
+        return new Media.Listener() {
+
+            @Override
+            public void onAudioTrackAdded(Media media, AudioTrack audioTrack) {
+                Log.d(TAG,"onAudioTrackAdded");
+            }
+
+            @Override
+            public void onAudioTrackRemoved(Media media, AudioTrack audioTrack) {
+                Log.d(TAG,"onAudioTrackRemoved");
+
+            }
+
+            @Override
+            public void onVideoTrackAdded(Media media, VideoTrack videoTrack) {
+                addParticipantVideo(videoTrack);
+                Log.d(TAG,"onVideoTrackAdded");
+
+            }
+
+            @Override
+            public void onVideoTrackRemoved(Media media, VideoTrack videoTrack) {
+                removeParticipantVideo(videoTrack);
+                Log.d(TAG,"onVideoTrackRemoved");
+
+            }
+
+            @Override
+            public void onAudioTrackEnabled(Media media, AudioTrack audioTrack) {
+
+            }
+
+            @Override
+            public void onAudioTrackDisabled(Media media, AudioTrack audioTrack) {
+
+            }
+
+            @Override
+            public void onVideoTrackEnabled(Media media, VideoTrack videoTrack) {
+
+            }
+
+            @Override
+            public void onVideoTrackDisabled(Media media, VideoTrack videoTrack) {
+
+            }
+        };
     }
 }
